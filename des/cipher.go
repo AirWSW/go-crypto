@@ -15,12 +15,14 @@ import (
 	"fmt"
 )
 
+// The DES block size in bytes.
 const BlockSize = 8
 
 type desCipher struct {
 	subKeys []uint64
 }
 
+// NewCipher creates and returns a new cipher.Block.
 func NewCipher(key []byte) (cipher.Block, error) {
 	if len(key) != 8 {
 		return nil, fmt.Errorf("invalid key size")

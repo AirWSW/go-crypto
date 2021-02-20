@@ -9,6 +9,7 @@ import (
 	"fmt"
 )
 
+// The AES block size in bytes.
 const BlockSize = 16
 
 type aesCipher struct {
@@ -16,6 +17,10 @@ type aesCipher struct {
 	dec [][]uint32
 }
 
+// NewCipher creates and returns a new cipher.Block.
+// The key argument should be the AES key,
+// either 16, 24, or 32 bytes to select
+// AES-128, AES-192, or AES-256.
 func NewCipher(key []byte) (cipher.Block, error) {
 	switch len(key) {
 	default:
