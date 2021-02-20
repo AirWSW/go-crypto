@@ -18,15 +18,15 @@ import (
 const BlockSize = 8
 
 type desCipher struct {
-	sk []uint64
+	subKeys []uint64
 }
 
 func NewCipher(key []byte) (cipher.Block, error) {
 	if len(key) != 8 {
-		return nil, fmt.Errorf("short key")
+		return nil, fmt.Errorf("invalid key size")
 	}
 	c := new(desCipher)
-	c.sk = subKeys(binary.BigEndian.Uint64(key))
+	c.subKeys = newSubKeys(binary.BigEndian.Uint64(key))
 	return c, nil
 }
 
@@ -34,22 +34,22 @@ func (c *desCipher) BlockSize() int { return BlockSize }
 
 func (c *desCipher) Encrypt(dst, src []byte) {
 	_, _ = dst[7], src[7] // early bounds check
-	binary.BigEndian.PutUint64(dst[:8], encryptBlock(c.sk[:], binary.BigEndian.Uint64(src[:8])))
+	binary.BigEndian.PutUint64(dst[:8], encryptBlock(c.subKeys[:], binary.BigEndian.Uint64(src[:8])))
 }
 
 func (c *desCipher) Decrypt(dst, src []byte) {
 	_, _ = dst[7], src[7] // early bounds check
-	binary.BigEndian.PutUint64(dst[:8], decryptBlock(c.sk[:], binary.BigEndian.Uint64(src[:8])))
+	binary.BigEndian.PutUint64(dst[:8], decryptBlock(c.subKeys[:], binary.BigEndian.Uint64(src[:8])))
 }
 
-func encryptBlock(sk []uint64, b uint64) uint64 {
-	return cryptBlock(sk, b)
+func encryptBlock(subKeys []uint64, b uint64) uint64 {
+	return cryptBlock(subKeys, b)
 }
 
-func decryptBlock(sk []uint64, b uint64) uint64 {
-	tk := make([]uint64, 0, len(sk))
-	for i := len(sk) - 1; i >= 0; i-- {
-		tk = append(tk, sk[i])
+func decryptBlock(subKeys []uint64, b uint64) uint64 {
+	tk := make([]uint64, 0, len(subKeys))
+	for i := len(subKeys) - 1; i >= 0; i-- {
+		tk = append(tk, subKeys[i])
 	}
 	return cryptBlock(tk, b)
 }
@@ -76,10 +76,10 @@ var finalPermutation = [64]uint8{
 	33, 1, 41, 9, 49, 17, 57, 25,
 }
 
-func cryptBlock(sk []uint64, b uint64) uint64 {
+func cryptBlock(subKeys []uint64, b uint64) uint64 {
 	b = permute(b, initialPermutation[:], 64)
 	l, r := uint32(b>>32), uint32(b)
-	for _, k := range sk {
+	for _, k := range subKeys {
 		l, r = feistel(l, r, k)
 	}
 	b = (uint64(r) << 32) | uint64(l)
@@ -200,16 +200,16 @@ var leftRotations = []uint8{
 	1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1,
 }
 
-func subKeys(k uint64) []uint64 {
+func newSubKeys(k uint64) []uint64 {
 	k = permute(k, permutedChoice1[:], 64)
 	l, r := uint32(k>>28), uint32(k&0xfffffff)
-	sk := make([]uint64, 16)
+	subKeys := make([]uint64, 16)
 	for i, n := range leftRotations {
 		l, r = (l<<n|l>>(28-n))&0xfffffff, (r<<n|r>>(28-n))&0xfffffff
 		k = uint64(l)<<28 | uint64(r)
-		sk[i] = permute(k, permutedChoice2[:], 56)
+		subKeys[i] = permute(k, permutedChoice2[:], 56)
 	}
-	return sk
+	return subKeys
 }
 
 func permute(b uint64, p []uint8, l uint8) uint64 {
@@ -225,7 +225,7 @@ func permute(b uint64, p []uint8, l uint8) uint64 {
 }
 
 type tripleDESCipher struct {
-	c1, c2, c3 *desCipher
+	cipher1, cipher2, cipher3 *desCipher
 }
 
 // NewTripleDESCipher creates and returns a new cipher.Block.
@@ -234,12 +234,12 @@ func NewTripleDESCipher(key []byte) (cipher.Block, error) {
 		return nil, fmt.Errorf("short key")
 	}
 	c := new(tripleDESCipher)
-	c.c1 = new(desCipher)
-	c.c2 = new(desCipher)
-	c.c3 = new(desCipher)
-	c.c1.sk = subKeys(binary.BigEndian.Uint64(key[:8]))
-	c.c2.sk = subKeys(binary.BigEndian.Uint64(key[8:16]))
-	c.c3.sk = subKeys(binary.BigEndian.Uint64(key[16:]))
+	c.cipher1 = new(desCipher)
+	c.cipher2 = new(desCipher)
+	c.cipher3 = new(desCipher)
+	c.cipher1.subKeys = newSubKeys(binary.BigEndian.Uint64(key[:8]))
+	c.cipher2.subKeys = newSubKeys(binary.BigEndian.Uint64(key[8:16]))
+	c.cipher3.subKeys = newSubKeys(binary.BigEndian.Uint64(key[16:]))
 	return c, nil
 }
 
@@ -248,15 +248,15 @@ func (c *tripleDESCipher) BlockSize() int { return BlockSize }
 func (c *tripleDESCipher) Encrypt(dst, src []byte) {
 	_, _ = dst[7], src[7] // early bounds check
 	binary.BigEndian.PutUint64(dst[:8],
-		encryptBlock(c.c3.sk[:],
-			decryptBlock(c.c2.sk[:],
-				encryptBlock(c.c1.sk[:], binary.BigEndian.Uint64(src[:8])))))
+		encryptBlock(c.cipher3.subKeys[:],
+			decryptBlock(c.cipher2.subKeys[:],
+				encryptBlock(c.cipher1.subKeys[:], binary.BigEndian.Uint64(src[:8])))))
 }
 
 func (c *tripleDESCipher) Decrypt(dst, src []byte) {
 	_, _ = dst[7], src[7] // early bounds check
 	binary.BigEndian.PutUint64(dst[:8],
-		decryptBlock(c.c1.sk[:],
-			encryptBlock(c.c2.sk[:],
-				decryptBlock(c.c3.sk[:], binary.BigEndian.Uint64(src[:8])))))
+		decryptBlock(c.cipher1.subKeys[:],
+			encryptBlock(c.cipher2.subKeys[:],
+				decryptBlock(c.cipher3.subKeys[:], binary.BigEndian.Uint64(src[:8])))))
 }
