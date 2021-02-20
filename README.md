@@ -2,8 +2,8 @@
 
 ### Usage
 
-- `github.com/AirWSW/go-crypto/aes`: Advanced Encryption Standard (aesCipher)
-- `github.com/AirWSW/go-crypto/des`: Data Encryption Standard (desCipher, tripleDESCipher)
+- `github.com/AirWSW/go-crypto/aes`: Advanced Encryption Standard (aesCipher) [Documentation](https://pkg.go.dev/github.com/AirWSW/go-crypto/aes)
+- `github.com/AirWSW/go-crypto/des`: Data Encryption Standard (desCipher, tripleDESCipher) [Documentation](https://pkg.go.dev/github.com/AirWSW/go-crypto/des)
 
 ### Unit tests
 
